@@ -1,16 +1,16 @@
-# 🛍️ Task 1 — Simple E-commerce Store
+# 🌐 Task 2 — Social Media Platform
 
-Full-stack e-commerce site: product listings, cart, checkout, order tracking, and JWT auth.
+Mini social media app: profiles, posts, likes, comments, and a follow system.
 
 **Stack:** Node.js, Express.js, MongoDB (Mongoose), Vanilla HTML/CSS/JS frontend.
 
 ## Folder Structure
 ```
-Task1_EcommerceStore/
+Task2_SocialMedia/
 ├── backend/
-│   ├── models/        (User, Product, Order)
-│   ├── routes/         (auth, products, cart, orders)
-│   ├── middleware/      (auth.js — JWT protect/admin)
+│   ├── models/        (User, Post)
+│   ├── routes/        (auth, posts, users)
+│   ├── middleware/     (auth.js)
 │   ├── server.js
 │   ├── package.json
 │   └── .env
@@ -22,45 +22,37 @@ Task1_EcommerceStore/
 
 ## How to Run
 
-### 1. Install MongoDB
-Install MongoDB Community Server locally, OR create a free cluster on MongoDB Atlas and copy your connection string.
-
-### 2. Backend setup
+### 1. Backend
 ```bash
 cd backend
 npm install
-```
-Edit `.env` if using Atlas — replace `MONGO_URI` with your Atlas connection string.
-
-```bash
 npm run dev
 ```
-Backend runs on **http://localhost:5000**
+Runs on **http://localhost:5001** (different port from Task 1 so both can run together).
 
-### 3. Frontend setup
-No build step needed — it's plain HTML/CSS/JS.
-- Open `frontend/index.html` directly in your browser, OR
-- Right-click → "Open with Live Server" (VS Code extension), OR
-- Run `npx serve frontend` from the project root
+### 2. Frontend
+Open `frontend/index.html` in your browser, or use Live Server / `npx serve frontend`.
 
-### 4. Test it
-1. Register a new account
-2. To add products, you need an admin account. In MongoDB, manually update a user's `role` field to `"admin"` (use MongoDB Compass or `mongosh`), then use Postman/Thunder Client to POST to `/api/products` with that admin's token.
-3. Browse products, add to cart, checkout, view order history.
+### 3. Test it
+1. Register two or more accounts (use different browsers/incognito to test follow & comments between users).
+2. Create posts on the Feed page.
+3. Like and comment on posts.
+4. Follow suggested users from the sidebar.
+5. Visit your Profile page to see your stats and posts.
 
 ## Key API Endpoints
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | /api/auth/register | Create account |
 | POST | /api/auth/login | Login |
-| GET | /api/products | List/search/filter products |
-| POST | /api/products | Add product (admin only) |
-| GET | /api/cart | View cart |
-| POST | /api/cart/add | Add item to cart |
-| POST | /api/orders | Place order |
-| GET | /api/orders/my | My order history |
+| GET | /api/posts | Get feed (all posts) |
+| POST | /api/posts | Create post |
+| PUT | /api/posts/:id/like | Like/unlike a post |
+| POST | /api/posts/:id/comment | Add comment |
+| GET | /api/users | List users (for suggestions) |
+| GET | /api/users/me | Current profile |
+| PUT | /api/users/:id/follow | Follow/unfollow |
 
 ## Notes
-- Passwords are hashed with bcrypt.
-- JWT token stored in browser localStorage.
-- For production: deploy backend on Render/Railway, frontend on Netlify/Vercel, and DB on MongoDB Atlas.
+- Each task uses a **separate MongoDB database** (`socialmedia`) and **separate port** (5001) so you can run all 4 tasks simultaneously without conflicts.
+- localStorage keys are prefixed (`t2_token`, `t2_user`) to avoid clashing with other tasks if opened in the same browser.
