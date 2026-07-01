@@ -1,182 +1,185 @@
-const API = 'http://localhost:5000/api';
-let token = localStorage.getItem('token');
-let user = JSON.parse(localStorage.getItem('user') || 'null');
-let cart = [];
+const API='http://localhost:5002/api';
+let token=localStorage.getItem('t3_token');
+let user=JSON.parse(localStorage.getItem('t3_user')||'null');
+let currentProject=null;
+let socket=null;
 
-function showPage(page) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.getElementById('page-' + page).classList.add('active');
-  if (page === 'products') loadProducts();
-  if (page === 'cart') loadCart();
-  if (page === 'orders') loadOrders();
+function switchAuth(tab){
+  document.getElementById('loginForm').style.display=tab==='login'?'block':'none';
+  document.getElementById('registerForm').style.display=tab==='register'?'block':'none';
+  document.getElementById('loginTab').className=tab==='login'?'active':'';
+  document.getElementById('registerTab').className=tab==='register'?'active':'';
 }
 
-function updateAuthUI() {
-  const authLinks = document.getElementById('authLinks');
-  const userInfo = document.getElementById('userInfo');
-  const userName = document.getElementById('userName');
-  if (token && user) {
-    authLinks.style.display = 'none';
-    userInfo.style.display = 'inline';
-    userName.textContent = 'Hi, ' + user.name + ' | ';
-  } else {
-    authLinks.style.display = 'inline';
-    userInfo.style.display = 'none';
-  }
+async function register(){
+  const name=document.getElementById('regName').value,email=document.getElementById('regEmail').value,password=document.getElementById('regPass').value;
+  const res=await fetch(API+'/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,password})});
+  const d=await res.json();
+  if(res.ok){setAuth(d);initApp();}else document.getElementById('regMsg').textContent=d.message;
+}
+async function login(){
+  const email=document.getElementById('loginEmail').value,password=document.getElementById('loginPass').value;
+  const res=await fetch(API+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})});
+  const d=await res.json();
+  if(res.ok){setAuth(d);initApp();}else document.getElementById('loginMsg').textContent=d.message;
+}
+function setAuth(d){token=d.token;user=d.user;localStorage.setItem('t3_token',token);localStorage.setItem('t3_user',JSON.stringify(user));}
+function logout(){token=null;user=null;localStorage.removeItem('t3_token');localStorage.removeItem('t3_user');location.reload();}
+
+function initApp(){
+  document.getElementById('page-auth').classList.remove('active');
+  document.getElementById('page-dashboard').classList.add('active');
+  document.getElementById('navUser').innerHTML=`<span style="color:white;margin-right:15px">${user.name}</span><button onclick="logout()">Logout</button>`;
+  socket=io('http://localhost:5002');
+  socket.on('task-updated',()=>{if(currentProject)loadBoard(currentProject);});
+  socket.on('comment-added',()=>{if(currentProject)loadBoard(currentProject);});
+  loadProjects();
 }
 
-async function register() {
-  const name = document.getElementById('regName').value;
-  const email = document.getElementById('regEmail').value;
-  const password = document.getElementById('regPassword').value;
-  const res = await fetch(API + '/auth/register', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, email, password })
-  });
-  const data = await res.json();
-  if (res.ok) {
-    token = data.token; user = data.user;
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(user));
-    updateAuthUI(); showPage('products');
-  } else { document.getElementById('regMsg').textContent = data.message; }
+async function loadProjects(){
+  const res=await fetch(API+'/projects',{headers:{'Authorization':'Bearer '+token}});
+  const projects=await res.json();
+  document.getElementById('projectList').innerHTML=projects.map(p=>`
+    <div class="project-item ${currentProject===p._id?'active':''}" onclick="selectProject('${p._id}','${p.name}')">
+      <div class="project-dot" style="background:${p.color||'#4f46e5'}"></div>
+      <span>${p.name}</span>
+    </div>`).join('');
 }
 
-async function login() {
-  const email = document.getElementById('loginEmail').value;
-  const password = document.getElementById('loginPassword').value;
-  const res = await fetch(API + '/auth/login', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password })
-  });
-  const data = await res.json();
-  if (res.ok) {
-    token = data.token; user = data.user;
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(user));
-    updateAuthUI(); showPage('products');
-  } else { document.getElementById('loginMsg').textContent = data.message; }
+function selectProject(id,name){
+  currentProject=id;
+  if(socket)socket.emit('join-project',id);
+  loadBoard(id,name);
+  loadProjects();
 }
 
-function logout() {
-  token = null; user = null;
-  localStorage.removeItem('token'); localStorage.removeItem('user');
-  updateAuthUI(); showPage('home');
-}
-
-async function loadProducts() {
-  const search = document.getElementById('searchInput')?.value || '';
-  const category = document.getElementById('categoryFilter')?.value || '';
-  let url = API + '/products?';
-  if (search) url += 'search=' + search + '&';
-  if (category) url += 'category=' + category;
-  const res = await fetch(url);
-  const products = await res.json();
-  const grid = document.getElementById('productsGrid');
-  grid.innerHTML = products.length ? products.map(p => `
-    <div class="card">
-      <img src="${p.image || 'https://via.placeholder.com/300x200?text=Product'}" alt="${p.name}"/>
-      <div class="card-body">
-        <div class="cat">${p.category}</div>
-        <h3>${p.name}</h3>
-        <div class="price">$${p.price.toFixed(2)}</div>
-        <button onclick="viewProduct('${p._id}')">View Details</button>
-        <button onclick="addToCart('${p._id}')" style="margin-top:8px;background:#16213e">Add to Cart</button>
-      </div>
-    </div>`).join('') : '<p>No products found.</p>';
-}
-
-async function viewProduct(id) {
-  const res = await fetch(API + '/products/' + id);
-  const p = await res.json();
-  document.getElementById('productDetail').innerHTML = `
-    <div class="detail-box">
-      <img src="${p.image || 'https://via.placeholder.com/400x300?text=Product'}" alt="${p.name}"/>
+async function loadBoard(projectId){
+  const [projRes,tasksRes]=await Promise.all([
+    fetch(API+'/projects/'+projectId,{headers:{'Authorization':'Bearer '+token}}),
+    fetch(API+'/tasks/project/'+projectId,{headers:{'Authorization':'Bearer '+token}})
+  ]);
+  const project=await projRes.json();
+  const tasks=await tasksRes.json();
+  const statuses=[{key:'todo',label:'To Do'},{key:'in-progress',label:'In Progress'},{key:'review',label:'Review'},{key:'done',label:'Done'}];
+  document.getElementById('boardArea').innerHTML=`
+    <div class="board-header">
+      <h2>${project.name}</h2>
       <div>
-        <span class="cat">${p.category}</span>
-        <h2 style="margin:10px 0">${p.name}</h2>
-        <p style="color:#888;margin-bottom:15px">${p.description}</p>
-        <div class="price" style="font-size:2rem">$${p.price.toFixed(2)}</div>
-        <p style="margin:10px 0;color:${p.stock>0?'green':'red'}">${p.stock>0?'In Stock ('+p.stock+')':'Out of Stock'}</p>
-        <button onclick="addToCart('${p._id}')" ${p.stock===0?'disabled':''}>Add to Cart</button>
-        <button onclick="showPage('products')" style="margin-left:10px;background:#555">Back</button>
+        <span style="color:#94a3b8;margin-right:15px">${project.members?.length||0} members</span>
+        <button onclick="showAddMemberModal('${projectId}')" style="padding:7px 14px;background:#4f46e5;color:white;border:none;border-radius:6px;cursor:pointer">+ Member</button>
       </div>
+    </div>
+    <div class="kanban">
+      ${statuses.map(s=>`
+        <div class="column">
+          <div class="column-title">${s.label} <span style="color:#94a3b8">(${tasks.filter(t=>t.status===s.key).length})</span></div>
+          ${tasks.filter(t=>t.status===s.key).map(t=>`
+            <div class="task-card ${t.priority}" onclick="showTaskDetail('${t._id}')">
+              <div class="task-title">${t.title}</div>
+              <div class="task-meta">
+                <span>${t.assignee?.name||'Unassigned'}</span>
+                <span class="priority-badge priority-${t.priority}">${t.priority}</span>
+              </div>
+              ${t.dueDate?`<div style="font-size:.75rem;color:#94a3b8;margin-top:5px">Due: ${new Date(t.dueDate).toLocaleDateString()}</div>`:''}
+            </div>`).join('')}
+          <button class="add-task-btn" onclick="showNewTaskModal('${projectId}','${s.key}')">+ Add Task</button>
+        </div>`).join('')}
     </div>`;
-  showPage('detail');
 }
 
-async function addToCart(productId) {
-  if (!token) { alert('Please login first'); showPage('login'); return; }
-  await fetch(API + '/cart/add', {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-    body: JSON.stringify({ productId, quantity: 1 })
-  });
-  await updateCartCount();
-  alert('Added to cart!');
+function showNewProjectModal(){
+  document.getElementById('modalTitle').textContent='New Project';
+  document.getElementById('modalBody').innerHTML=`
+    <input id="projName" placeholder="Project name"/>
+    <input id="projDesc" placeholder="Description (optional)"/>
+    <input id="projColor" type="color" value="#4f46e5" style="height:40px"/>
+    <button onclick="createProject()">Create Project</button>`;
+  document.getElementById('modal').style.display='flex';
 }
 
-async function loadCart() {
-  if (!token) { document.getElementById('cartItems').innerHTML = '<p>Please login to view cart.</p>'; return; }
-  const res = await fetch(API + '/cart', { headers: { 'Authorization': 'Bearer ' + token } });
-  cart = await res.json();
-  const el = document.getElementById('cartItems');
-  if (!cart.length) { el.innerHTML = '<p>Your cart is empty.</p>'; document.getElementById('cartTotal').innerHTML = ''; document.getElementById('checkoutBtn').style.display = 'none'; return; }
-  let total = 0;
-  el.innerHTML = cart.map(item => {
-    const subtotal = item.product.price * item.quantity;
-    total += subtotal;
-    return `<div class="cart-item">
-      <div><strong>${item.product.name}</strong><br><small>$${item.product.price} x ${item.quantity}</small></div>
-      <div>$${subtotal.toFixed(2)} <button onclick="removeFromCart('${item.product._id}')" style="margin-left:10px;background:#dc3545;padding:6px 12px">Remove</button></div>
-    </div>`;
-  }).join('');
-  document.getElementById('cartTotal').innerHTML = `<h3 style="text-align:right;margin-top:15px">Total: $${total.toFixed(2)}</h3>`;
-  document.getElementById('checkoutBtn').style.display = 'block';
+async function createProject(){
+  const name=document.getElementById('projName').value;
+  const description=document.getElementById('projDesc').value;
+  const color=document.getElementById('projColor').value;
+  await fetch(API+'/projects',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({name,description,color})});
+  closeModal();loadProjects();
 }
 
-async function removeFromCart(productId) {
-  await fetch(API + '/cart/remove/' + productId, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token } });
-  await updateCartCount(); loadCart();
+function showNewTaskModal(projectId,status){
+  document.getElementById('modalTitle').textContent='New Task';
+  document.getElementById('modalBody').innerHTML=`
+    <input id="taskTitle" placeholder="Task title"/>
+    <textarea id="taskDesc" placeholder="Description" rows="3"></textarea>
+    <select id="taskPriority"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option></select>
+    <input id="taskDue" type="date" placeholder="Due date"/>
+    <button onclick="createTask('${projectId}','${status}')">Create Task</button>`;
+  document.getElementById('modal').style.display='flex';
 }
 
-async function updateCartCount() {
-  if (!token) return;
-  const res = await fetch(API + '/cart', { headers: { 'Authorization': 'Bearer ' + token } });
-  const c = await res.json();
-  document.getElementById('cartCount').textContent = c.length;
+async function createTask(projectId,status){
+  const title=document.getElementById('taskTitle').value;
+  const description=document.getElementById('taskDesc').value;
+  const priority=document.getElementById('taskPriority').value;
+  const dueDate=document.getElementById('taskDue').value;
+  await fetch(API+'/tasks',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({title,description,priority,status,project:projectId,dueDate:dueDate||undefined})});
+  closeModal();
+  if(socket)socket.emit('task-update',{projectId});
+  loadBoard(projectId);
 }
 
-function showCheckout() { showPage('checkout'); }
-
-async function placeOrder() {
-  const address = {
-    street: document.getElementById('street').value,
-    city: document.getElementById('city').value,
-    zip: document.getElementById('zip').value,
-    country: document.getElementById('country').value
-  };
-  const items = cart.map(i => ({ product: i.product._id, quantity: i.quantity, price: i.product.price }));
-  const res = await fetch(API + '/orders', {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-    body: JSON.stringify({ items, address })
-  });
-  if (res.ok) { alert('Order placed successfully!'); await updateCartCount(); showPage('orders'); }
-  else { const d = await res.json(); alert(d.message); }
-}
-
-async function loadOrders() {
-  if (!token) return;
-  const res = await fetch(API + '/orders/my', { headers: { 'Authorization': 'Bearer ' + token } });
-  const orders = await res.json();
-  document.getElementById('ordersList').innerHTML = orders.length ? orders.map(o => `
-    <div class="order-card">
-      <div style="display:flex;justify-content:space-between;margin-bottom:10px">
-        <strong>Order #${o._id.slice(-6).toUpperCase()}</strong>
-        <span class="status ${o.status}">${o.status.toUpperCase()}</span>
+async function showTaskDetail(taskId){
+  const res=await fetch(API+'/tasks/project/'+currentProject,{headers:{'Authorization':'Bearer '+token}});
+  const tasks=await res.json();
+  const t=tasks.find(x=>x._id===taskId);
+  if(!t)return;
+  document.getElementById('modalTitle').textContent='Task Details';
+  document.getElementById('modalBody').innerHTML=`
+    <div class="task-detail">
+      <strong>${t.title}</strong>
+      <p style="color:#64748b;margin:8px 0">${t.description||'No description'}</p>
+      <select onchange="updateTaskStatus('${t._id}',this.value)">
+        <option value="todo" ${t.status==='todo'?'selected':''}>To Do</option>
+        <option value="in-progress" ${t.status==='in-progress'?'selected':''}>In Progress</option>
+        <option value="review" ${t.status==='review'?'selected':''}>Review</option>
+        <option value="done" ${t.status==='done'?'selected':''}>Done</option>
+      </select>
+      <div class="comments-pm">
+        ${t.comments.map(c=>`<div class="comment-pm"><strong>${c.user?.name||'?'}</strong>: ${c.text}</div>`).join('')}
       </div>
-      <div>${o.items.map(i => `${i.product?.name || 'Item'} x${i.quantity}`).join(', ')}</div>
-      <div style="margin-top:8px"><strong>Total: $${o.total.toFixed(2)}</strong> &nbsp; <small style="color:#888">${new Date(o.createdAt).toLocaleDateString()}</small></div>
-    </div>`).join('') : '<p>No orders yet.</p>';
+      <input id="newComment" placeholder="Add a comment..."/>
+      <button onclick="addComment('${t._id}')">Add Comment</button>
+    </div>`;
+  document.getElementById('modal').style.display='flex';
 }
 
-updateAuthUI();
+async function updateTaskStatus(taskId,status){
+  await fetch(API+'/tasks/'+taskId,{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({status})});
+  if(socket)socket.emit('task-update',{projectId:currentProject});
+  closeModal();loadBoard(currentProject);
+}
+
+async function addComment(taskId){
+  const text=document.getElementById('newComment').value;
+  if(!text)return;
+  await fetch(API+'/tasks/'+taskId+'/comment',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({text})});
+  if(socket)socket.emit('new-comment',{projectId:currentProject});
+  showTaskDetail(taskId);
+}
+
+function showAddMemberModal(projectId){
+  document.getElementById('modalTitle').textContent='Add Member';
+  document.getElementById('modalBody').innerHTML=`
+    <input id="memberEmail" type="email" placeholder="Member's email"/>
+    <button onclick="addMember('${projectId}')">Add Member</button>`;
+  document.getElementById('modal').style.display='flex';
+}
+
+async function addMember(projectId){
+  const email=document.getElementById('memberEmail').value;
+  await fetch(API+'/projects/'+projectId+'/members',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({email})});
+  closeModal();
+}
+
+function closeModal(){document.getElementById('modal').style.display='none';}
+
+if(token&&user)initApp();

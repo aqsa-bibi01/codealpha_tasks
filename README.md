@@ -1,66 +1,63 @@
-# 🛍️ Task 1 — Simple E-commerce Store
+# 📋 Task 3 — Project Management Tool
 
-Full-stack e-commerce site: product listings, cart, checkout, order tracking, and JWT auth.
+Trello/Asana-style collaborative tool: projects, Kanban task boards, comments, and real-time updates via WebSockets (Socket.io).
 
-**Stack:** Node.js, Express.js, MongoDB (Mongoose), Vanilla HTML/CSS/JS frontend.
+**Stack:** Node.js, Express.js, Socket.io, MongoDB (Mongoose), Vanilla HTML/CSS/JS frontend.
 
 ## Folder Structure
 ```
-Task1_EcommerceStore/
+Task3_ProjectManagement/
 ├── backend/
-│   ├── models/        (User, Product, Order)
-│   ├── routes/         (auth, products, cart, orders)
-│   ├── middleware/      (auth.js — JWT protect/admin)
-│   ├── server.js
+│   ├── models/        (User, Project, Task)
+│   ├── routes/        (auth, projects, tasks)
+│   ├── middleware/     (auth.js)
+│   ├── server.js       (includes Socket.io setup)
 │   ├── package.json
 │   └── .env
 └── frontend/
     ├── index.html
     ├── style.css
-    └── app.js
+    └── app.js           (includes Socket.io client logic)
 ```
 
 ## How to Run
 
-### 1. Install MongoDB
-Install MongoDB Community Server locally, OR create a free cluster on MongoDB Atlas and copy your connection string.
-
-### 2. Backend setup
+### 1. Backend
 ```bash
 cd backend
 npm install
-```
-Edit `.env` if using Atlas — replace `MONGO_URI` with your Atlas connection string.
-
-```bash
 npm run dev
 ```
-Backend runs on **http://localhost:5000**
+Runs on **http://localhost:5002**
 
-### 3. Frontend setup
-No build step needed — it's plain HTML/CSS/JS.
-- Open `frontend/index.html` directly in your browser, OR
-- Right-click → "Open with Live Server" (VS Code extension), OR
-- Run `npx serve frontend` from the project root
+### 2. Frontend
+Open `frontend/index.html` in browser, or `npx serve frontend`.
+Note: it loads Socket.io client from a CDN, so you need internet access in the browser tab.
 
-### 4. Test it
-1. Register a new account
-2. To add products, you need an admin account. In MongoDB, manually update a user's `role` field to `"admin"` (use MongoDB Compass or `mongosh`), then use Postman/Thunder Client to POST to `/api/products` with that admin's token.
-3. Browse products, add to cart, checkout, view order history.
+### 3. Test it
+1. Register/login.
+2. Click **+ New Project**, give it a name and color.
+3. Click into the project — you get a 4-column Kanban board (To Do / In Progress / Review / Done).
+4. Click **+ Add Task** in any column to create tasks with priority and due dates.
+5. Click a task card to open details, change its status, or add comments.
+6. **Real-time test:** Open the same project in two browser tabs (or two different logged-in users) — moving a task or adding a comment in one tab instantly updates the other via WebSockets.
+7. Use **+ Member** to invite another registered user by email to collaborate on the project.
 
 ## Key API Endpoints
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | /api/auth/register | Create account |
-| POST | /api/auth/login | Login |
-| GET | /api/products | List/search/filter products |
-| POST | /api/products | Add product (admin only) |
-| GET | /api/cart | View cart |
-| POST | /api/cart/add | Add item to cart |
-| POST | /api/orders | Place order |
-| GET | /api/orders/my | My order history |
+| POST | /api/auth/register, /login | Auth |
+| GET/POST | /api/projects | List / create projects |
+| POST | /api/projects/:id/members | Add member by email |
+| GET | /api/tasks/project/:projectId | Get tasks for a project |
+| POST | /api/tasks | Create task |
+| PUT | /api/tasks/:id | Update task (status, etc.) |
+| POST | /api/tasks/:id/comment | Comment on task |
+
+## WebSocket Events
+- `join-project` — joins a Socket.io room per project
+- `task-update` / `task-updated` — broadcasts task changes
+- `new-comment` / `comment-added` — broadcasts new comments
 
 ## Notes
-- Passwords are hashed with bcrypt.
-- JWT token stored in browser localStorage.
-- For production: deploy backend on Render/Railway, frontend on Netlify/Vercel, and DB on MongoDB Atlas.
+- Runs on port 5002 / DB `projectmanagement` — independent from other tasks.
