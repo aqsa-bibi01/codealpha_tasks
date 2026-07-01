@@ -1,66 +1,67 @@
-# 🛍️ Task 1 — Simple E-commerce Store
+# 🎥 Task 4 — Real-Time Communication App (MeetSpace)
 
-Full-stack e-commerce site: product listings, cart, checkout, order tracking, and JWT auth.
+Video conferencing + collaboration tool: multi-user video calls (WebRTC), screen sharing, group chat, file sharing, and a shared whiteboard.
 
-**Stack:** Node.js, Express.js, MongoDB (Mongoose), Vanilla HTML/CSS/JS frontend.
+**Stack:** Node.js, Express.js, Socket.io (signaling), WebRTC (peer-to-peer media), MongoDB (Mongoose), Multer (file uploads), Vanilla HTML/CSS/JS frontend.
 
 ## Folder Structure
 ```
-Task1_EcommerceStore/
+Task4_RealTimeCommunication/
 ├── backend/
-│   ├── models/        (User, Product, Order)
-│   ├── routes/         (auth, products, cart, orders)
-│   ├── middleware/      (auth.js — JWT protect/admin)
-│   ├── server.js
+│   ├── models/        (User, Room)
+│   ├── routes/        (auth, rooms, messages)
+│   ├── middleware/     (auth.js)
+│   ├── uploads/         (created automatically — stores shared files)
+│   ├── server.js        (Express + Socket.io signaling server)
 │   ├── package.json
 │   └── .env
 └── frontend/
     ├── index.html
     ├── style.css
-    └── app.js
+    └── app.js            (WebRTC peer connections + Socket.io client)
 ```
 
 ## How to Run
 
-### 1. Install MongoDB
-Install MongoDB Community Server locally, OR create a free cluster on MongoDB Atlas and copy your connection string.
-
-### 2. Backend setup
+### 1. Backend
 ```bash
 cd backend
 npm install
-```
-Edit `.env` if using Atlas — replace `MONGO_URI` with your Atlas connection string.
-
-```bash
 npm run dev
 ```
-Backend runs on **http://localhost:5000**
+Runs on **http://localhost:5003**
 
-### 3. Frontend setup
-No build step needed — it's plain HTML/CSS/JS.
-- Open `frontend/index.html` directly in your browser, OR
-- Right-click → "Open with Live Server" (VS Code extension), OR
-- Run `npx serve frontend` from the project root
+### 2. Frontend
+Open `frontend/index.html` in your browser, or `npx serve frontend`.
 
-### 4. Test it
-1. Register a new account
-2. To add products, you need an admin account. In MongoDB, manually update a user's `role` field to `"admin"` (use MongoDB Compass or `mongosh`), then use Postman/Thunder Client to POST to `/api/products` with that admin's token.
-3. Browse products, add to cart, checkout, view order history.
+⚠️ **Important:** Browsers only allow camera/microphone access on `https://` or `http://localhost`. If you serve the frontend with `npx serve`, it will be on `http://localhost:PORT`, which works fine. Opening the raw `file://` HTML may block camera access in some browsers — prefer Live Server or `npx serve`.
+
+### 3. Test it (needs 2 browser windows/tabs to see video calling work)
+1. Register/login in **Tab A**.
+2. Click **Start New Meeting** → note the 6-character room code shown at the bottom.
+3. Allow camera/microphone access when prompted.
+4. In **Tab B** (incognito window, or a different browser), register a second account, then **Join Meeting** with that same room code.
+5. Both tabs should now show each other's video feeds.
+6. Try: muting mic, turning off camera, screen sharing, opening the whiteboard and drawing (should sync live between tabs), sending chat messages, and uploading a file.
 
 ## Key API Endpoints
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | /api/auth/register | Create account |
-| POST | /api/auth/login | Login |
-| GET | /api/products | List/search/filter products |
-| POST | /api/products | Add product (admin only) |
-| GET | /api/cart | View cart |
-| POST | /api/cart/add | Add item to cart |
-| POST | /api/orders | Place order |
-| GET | /api/orders/my | My order history |
+| POST | /api/auth/register, /login | Auth |
+| POST | /api/rooms | Create a meeting room (returns room code) |
+| GET | /api/rooms/:code | Look up a room by code |
+| POST | /api/messages/upload | Upload a file (shared in meeting) |
+
+## WebSocket / WebRTC Events
+- `join-room` → triggers WebRTC offer/answer/ICE candidate exchange between peers
+- `offer` / `answer` / `ice-candidate` → WebRTC signaling relay
+- `chat-message` → group text chat
+- `draw` / `clear-board` → shared whiteboard sync
+- `screen-share-started` / `screen-share-stopped` → notify peers of screen share state
+
+## Security Note
+- "Data encryption" here refers to WebRTC's built-in DTLS-SRTP encryption for media streams (this is automatic/standard in all WebRTC connections — no extra setup needed) and JWT for authenticated REST calls. This is honest framing for a portfolio/internship project; it is **not** a production-grade end-to-end encrypted system audited for security.
 
 ## Notes
-- Passwords are hashed with bcrypt.
-- JWT token stored in browser localStorage.
-- For production: deploy backend on Render/Railway, frontend on Netlify/Vercel, and DB on MongoDB Atlas.
+- Runs on port 5003 / DB `rtcapp` — independent from other tasks.
+- Uses Google's free public STUN server for NAT traversal. For users behind strict corporate firewalls, you'd need a TURN server (e.g. via a free Twilio/Metered TURN service) — out of scope for this internship task but worth mentioning in your video/LinkedIn post as a "future improvement."

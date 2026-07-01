@@ -1,106 +1,89 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>ShopZone — E-Commerce</title>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>MeetSpace — Video Conferencing</title>
   <link rel="stylesheet" href="style.css"/>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 </head>
 <body>
-  <!-- NAVBAR -->
-  <nav>
-    <div class="logo">🛍️ ShopZone</div>
-    <div class="nav-links">
-      <a href="#" onclick="showPage('home')">Home</a>
-      <a href="#" onclick="showPage('products')">Products</a>
-      <a href="#" onclick="showPage('cart')">🛒 Cart <span id="cartCount">0</span></a>
-      <span id="authLinks">
-        <a href="#" onclick="showPage('login')">Login</a>
-        <a href="#" onclick="showPage('register')">Register</a>
-      </span>
-      <span id="userInfo" style="display:none">
-        <span id="userName"></span>
-        <a href="#" onclick="showPage('orders')">My Orders</a>
-        <a href="#" onclick="logout()">Logout</a>
-      </span>
+  <!-- LOGIN -->
+  <div id="page-auth" class="page active">
+    <div class="auth-tabs">
+      <button onclick="switchAuth('login')" class="active" id="loginTab">Login</button>
+      <button onclick="switchAuth('register')" id="registerTab">Register</button>
     </div>
-  </nav>
-
-  <!-- HOME PAGE -->
-  <div id="page-home" class="page active">
-    <div class="hero">
-      <h1>Welcome to ShopZone</h1>
-      <p>Discover amazing products at great prices</p>
-      <button onclick="showPage('products')">Shop Now</button>
-    </div>
-  </div>
-
-  <!-- PRODUCTS PAGE -->
-  <div id="page-products" class="page">
-    <div class="filters">
-      <input id="searchInput" type="text" placeholder="Search products..." oninput="loadProducts()"/>
-      <select id="categoryFilter" onchange="loadProducts()">
-        <option value="">All Categories</option>
-        <option>Electronics</option><option>Clothing</option>
-        <option>Books</option><option>Home</option><option>Sports</option>
-      </select>
-    </div>
-    <div id="productsGrid" class="grid"></div>
-  </div>
-
-  <!-- PRODUCT DETAIL PAGE -->
-  <div id="page-detail" class="page">
-    <div id="productDetail"></div>
-  </div>
-
-  <!-- CART PAGE -->
-  <div id="page-cart" class="page">
-    <h2>Your Cart</h2>
-    <div id="cartItems"></div>
-    <div id="cartTotal"></div>
-    <button id="checkoutBtn" onclick="showCheckout()" style="display:none">Proceed to Checkout</button>
-  </div>
-
-  <!-- CHECKOUT PAGE -->
-  <div id="page-checkout" class="page">
-    <h2>Checkout</h2>
     <div class="form-box">
-      <input id="street" placeholder="Street Address" />
-      <input id="city" placeholder="City" />
-      <input id="zip" placeholder="ZIP Code" />
-      <input id="country" placeholder="Country" />
-      <button onclick="placeOrder()">Place Order</button>
+      <div id="loginForm">
+        <input id="loginEmail" type="email" placeholder="Email"/>
+        <input id="loginPass" type="password" placeholder="Password"/>
+        <button onclick="login()">Login</button>
+        <p id="loginMsg" class="msg"></p>
+      </div>
+      <div id="registerForm" style="display:none">
+        <input id="regName" placeholder="Full Name"/>
+        <input id="regEmail" type="email" placeholder="Email"/>
+        <input id="regPass" type="password" placeholder="Password"/>
+        <button onclick="register()">Create Account</button>
+        <p id="regMsg" class="msg"></p>
+      </div>
     </div>
   </div>
 
-  <!-- ORDERS PAGE -->
-  <div id="page-orders" class="page">
-    <h2>My Orders</h2>
-    <div id="ordersList"></div>
-  </div>
-
-  <!-- LOGIN PAGE -->
-  <div id="page-login" class="page">
-    <div class="form-box">
-      <h2>Login</h2>
-      <input id="loginEmail" type="email" placeholder="Email"/>
-      <input id="loginPassword" type="password" placeholder="Password"/>
-      <button onclick="login()">Login</button>
-      <p>No account? <a href="#" onclick="showPage('register')">Register</a></p>
-      <p id="loginMsg" class="msg"></p>
+  <!-- LOBBY -->
+  <div id="page-lobby" class="page">
+    <div class="lobby-box">
+      <h1>🎥 MeetSpace</h1>
+      <p style="color:#94a3b8;margin-bottom:25px">Secure video meetings, encrypted end-to-end</p>
+      <button onclick="createRoom()" class="big-btn">+ Start New Meeting</button>
+      <div class="or-divider">or</div>
+      <input id="joinCode" placeholder="Enter meeting code"/>
+      <button onclick="joinRoom()" class="big-btn secondary">Join Meeting</button>
     </div>
   </div>
 
-  <!-- REGISTER PAGE -->
-  <div id="page-register" class="page">
-    <div class="form-box">
-      <h2>Register</h2>
-      <input id="regName" placeholder="Full Name"/>
-      <input id="regEmail" type="email" placeholder="Email"/>
-      <input id="regPassword" type="password" placeholder="Password"/>
-      <button onclick="register()">Register</button>
-      <p>Have an account? <a href="#" onclick="showPage('login')">Login</a></p>
-      <p id="regMsg" class="msg"></p>
+  <!-- MEETING ROOM -->
+  <div id="page-meeting" class="page">
+    <div class="meeting-layout">
+      <div class="video-area">
+        <div class="video-grid" id="videoGrid"></div>
+        <div class="whiteboard-container" id="whiteboardContainer" style="display:none">
+          <canvas id="whiteboard"></canvas>
+          <button onclick="clearBoard()" class="wb-clear">Clear Board</button>
+        </div>
+      </div>
+      <div class="side-panel" id="sidePanel" style="display:none">
+        <div class="panel-tabs">
+          <button onclick="switchPanel('chat')" class="active" id="chatTab">Chat</button>
+          <button onclick="switchPanel('files')" id="filesTab">Files</button>
+          <button onclick="switchPanel('people')" id="peopleTab">People</button>
+        </div>
+        <div id="panel-chat" class="panel-content">
+          <div id="chatMessages"></div>
+          <div class="chat-input">
+            <input id="chatInput" placeholder="Type a message..." onkeypress="if(event.key==='Enter')sendChat()"/>
+            <button onclick="sendChat()">Send</button>
+          </div>
+        </div>
+        <div id="panel-files" class="panel-content" style="display:none">
+          <input type="file" id="fileInput" onchange="uploadFile()"/>
+          <div id="filesList"></div>
+        </div>
+        <div id="panel-people" class="panel-content" style="display:none">
+          <div id="peopleList"></div>
+        </div>
+      </div>
+    </div>
+    <div class="controls-bar">
+      <div class="room-info">Code: <strong id="roomCodeDisplay"></strong> 🔒 Encrypted</div>
+      <div class="control-buttons">
+        <button onclick="toggleMic()" id="micBtn" class="ctrl-btn">🎤</button>
+        <button onclick="toggleCam()" id="camBtn" class="ctrl-btn">📹</button>
+        <button onclick="toggleScreenShare()" id="screenBtn" class="ctrl-btn">🖥️</button>
+        <button onclick="toggleWhiteboard()" id="wbBtn" class="ctrl-btn">✏️</button>
+        <button onclick="togglePanel()" class="ctrl-btn">💬</button>
+        <button onclick="leaveMeeting()" class="ctrl-btn end-call">📞</button>
+      </div>
     </div>
   </div>
 

@@ -1,182 +1,219 @@
-const API = 'http://localhost:5000/api';
-let token = localStorage.getItem('token');
-let user = JSON.parse(localStorage.getItem('user') || 'null');
-let cart = [];
+const API='http://localhost:5003/api';
+let token=localStorage.getItem('t4_token');
+let user=JSON.parse(localStorage.getItem('t4_user')||'null');
+let socket,localStream,roomId,peers={};
+const peerConfig={iceServers:[{urls:'stun:stun.l.google.com:19302'}]};
 
-function showPage(page) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.getElementById('page-' + page).classList.add('active');
-  if (page === 'products') loadProducts();
-  if (page === 'cart') loadCart();
-  if (page === 'orders') loadOrders();
+function switchAuth(tab){
+  document.getElementById('loginForm').style.display=tab==='login'?'block':'none';
+  document.getElementById('registerForm').style.display=tab==='register'?'block':'none';
+  document.getElementById('loginTab').className=tab==='login'?'active':'';
+  document.getElementById('registerTab').className=tab==='register'?'active':'';
+}
+async function register(){
+  const name=document.getElementById('regName').value,email=document.getElementById('regEmail').value,password=document.getElementById('regPass').value;
+  const res=await fetch(API+'/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,password})});
+  const d=await res.json();
+  if(res.ok){setAuth(d);goLobby();}else document.getElementById('regMsg').textContent=d.message;
+}
+async function login(){
+  const email=document.getElementById('loginEmail').value,password=document.getElementById('loginPass').value;
+  const res=await fetch(API+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})});
+  const d=await res.json();
+  if(res.ok){setAuth(d);goLobby();}else document.getElementById('loginMsg').textContent=d.message;
+}
+function setAuth(d){token=d.token;user=d.user;localStorage.setItem('t4_token',token);localStorage.setItem('t4_user',JSON.stringify(user));}
+function goLobby(){document.getElementById('page-auth').classList.remove('active');document.getElementById('page-lobby').classList.add('active');}
+
+async function createRoom(){
+  const res=await fetch(API+'/rooms',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({name:user.name+"'s Meeting"})});
+  const room=await res.json();
+  enterMeeting(room.roomCode);
+}
+async function joinRoom(){
+  const code=document.getElementById('joinCode').value.trim().toUpperCase();
+  if(!code)return;
+  const res=await fetch(API+'/rooms/'+code);
+  if(!res.ok){alert('Room not found');return;}
+  enterMeeting(code);
 }
 
-function updateAuthUI() {
-  const authLinks = document.getElementById('authLinks');
-  const userInfo = document.getElementById('userInfo');
-  const userName = document.getElementById('userName');
-  if (token && user) {
-    authLinks.style.display = 'none';
-    userInfo.style.display = 'inline';
-    userName.textContent = 'Hi, ' + user.name + ' | ';
-  } else {
-    authLinks.style.display = 'inline';
-    userInfo.style.display = 'none';
+async function enterMeeting(code){
+  roomId=code;
+  document.getElementById('page-lobby').classList.remove('active');
+  document.getElementById('page-meeting').classList.add('active');
+  document.getElementById('roomCodeDisplay').textContent=code;
+
+  try{
+    localStream=await navigator.mediaDevices.getUserMedia({video:true,audio:true});
+  }catch(e){
+    console.warn('No camera/mic access, joining audio/video-off');
+    localStream=new MediaStream();
   }
-}
+  addVideoTile('local',user.name+' (You)',localStream);
 
-async function register() {
-  const name = document.getElementById('regName').value;
-  const email = document.getElementById('regEmail').value;
-  const password = document.getElementById('regPassword').value;
-  const res = await fetch(API + '/auth/register', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, email, password })
+  socket=io('http://localhost:5003');
+  socket.emit('join-room',{roomId,userId:user.id,userName:user.name});
+
+  socket.on('user-joined',async({userId,userName,socketId})=>{
+    const pc=createPeerConnection(socketId,userName);
+    localStream.getTracks().forEach(t=>pc.addTrack(t,localStream));
+    const offer=await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    socket.emit('offer',{to:socketId,offer});
   });
-  const data = await res.json();
-  if (res.ok) {
-    token = data.token; user = data.user;
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(user));
-    updateAuthUI(); showPage('products');
-  } else { document.getElementById('regMsg').textContent = data.message; }
-}
 
-async function login() {
-  const email = document.getElementById('loginEmail').value;
-  const password = document.getElementById('loginPassword').value;
-  const res = await fetch(API + '/auth/login', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password })
+  socket.on('offer',async({from,offer})=>{
+    const pc=createPeerConnection(from,'Participant');
+    localStream.getTracks().forEach(t=>pc.addTrack(t,localStream));
+    await pc.setRemoteDescription(offer);
+    const answer=await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    socket.emit('answer',{to:from,answer});
   });
-  const data = await res.json();
-  if (res.ok) {
-    token = data.token; user = data.user;
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(user));
-    updateAuthUI(); showPage('products');
-  } else { document.getElementById('loginMsg').textContent = data.message; }
-}
-
-function logout() {
-  token = null; user = null;
-  localStorage.removeItem('token'); localStorage.removeItem('user');
-  updateAuthUI(); showPage('home');
-}
-
-async function loadProducts() {
-  const search = document.getElementById('searchInput')?.value || '';
-  const category = document.getElementById('categoryFilter')?.value || '';
-  let url = API + '/products?';
-  if (search) url += 'search=' + search + '&';
-  if (category) url += 'category=' + category;
-  const res = await fetch(url);
-  const products = await res.json();
-  const grid = document.getElementById('productsGrid');
-  grid.innerHTML = products.length ? products.map(p => `
-    <div class="card">
-      <img src="${p.image || 'https://via.placeholder.com/300x200?text=Product'}" alt="${p.name}"/>
-      <div class="card-body">
-        <div class="cat">${p.category}</div>
-        <h3>${p.name}</h3>
-        <div class="price">$${p.price.toFixed(2)}</div>
-        <button onclick="viewProduct('${p._id}')">View Details</button>
-        <button onclick="addToCart('${p._id}')" style="margin-top:8px;background:#16213e">Add to Cart</button>
-      </div>
-    </div>`).join('') : '<p>No products found.</p>';
-}
-
-async function viewProduct(id) {
-  const res = await fetch(API + '/products/' + id);
-  const p = await res.json();
-  document.getElementById('productDetail').innerHTML = `
-    <div class="detail-box">
-      <img src="${p.image || 'https://via.placeholder.com/400x300?text=Product'}" alt="${p.name}"/>
-      <div>
-        <span class="cat">${p.category}</span>
-        <h2 style="margin:10px 0">${p.name}</h2>
-        <p style="color:#888;margin-bottom:15px">${p.description}</p>
-        <div class="price" style="font-size:2rem">$${p.price.toFixed(2)}</div>
-        <p style="margin:10px 0;color:${p.stock>0?'green':'red'}">${p.stock>0?'In Stock ('+p.stock+')':'Out of Stock'}</p>
-        <button onclick="addToCart('${p._id}')" ${p.stock===0?'disabled':''}>Add to Cart</button>
-        <button onclick="showPage('products')" style="margin-left:10px;background:#555">Back</button>
-      </div>
-    </div>`;
-  showPage('detail');
-}
-
-async function addToCart(productId) {
-  if (!token) { alert('Please login first'); showPage('login'); return; }
-  await fetch(API + '/cart/add', {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-    body: JSON.stringify({ productId, quantity: 1 })
+  socket.on('answer',async({from,answer})=>{
+    if(peers[from])await peers[from].pc.setRemoteDescription(answer);
   });
-  await updateCartCount();
-  alert('Added to cart!');
+  socket.on('ice-candidate',async({from,candidate})=>{
+    if(peers[from])try{await peers[from].pc.addIceCandidate(candidate);}catch(e){}
+  });
+  socket.on('user-left',({socketId})=>{
+    removeVideoTile(socketId);
+    if(peers[socketId]){peers[socketId].pc.close();delete peers[socketId];}
+  });
+  socket.on('room-users',users=>{
+    document.getElementById('peopleList').innerHTML=users.map(u=>`<div class="person-item">👤 ${u.userName}</div>`).join('')||'<div class="person-item">Just you</div>';
+  });
+  socket.on('chat-message',({userName,message,time})=>{
+    const div=document.getElementById('chatMessages');
+    div.innerHTML+=`<div class="chat-msg"><span class="sender">${userName}</span><br>${message}</div>`;
+    div.scrollTop=div.scrollHeight;
+  });
+  socket.on('draw',data=>drawOnBoard(data,false));
+  socket.on('clear-board',()=>{const c=document.getElementById('whiteboard');c.getContext('2d').clearRect(0,0,c.width,c.height);});
 }
 
-async function loadCart() {
-  if (!token) { document.getElementById('cartItems').innerHTML = '<p>Please login to view cart.</p>'; return; }
-  const res = await fetch(API + '/cart', { headers: { 'Authorization': 'Bearer ' + token } });
-  cart = await res.json();
-  const el = document.getElementById('cartItems');
-  if (!cart.length) { el.innerHTML = '<p>Your cart is empty.</p>'; document.getElementById('cartTotal').innerHTML = ''; document.getElementById('checkoutBtn').style.display = 'none'; return; }
-  let total = 0;
-  el.innerHTML = cart.map(item => {
-    const subtotal = item.product.price * item.quantity;
-    total += subtotal;
-    return `<div class="cart-item">
-      <div><strong>${item.product.name}</strong><br><small>$${item.product.price} x ${item.quantity}</small></div>
-      <div>$${subtotal.toFixed(2)} <button onclick="removeFromCart('${item.product._id}')" style="margin-left:10px;background:#dc3545;padding:6px 12px">Remove</button></div>
-    </div>`;
-  }).join('');
-  document.getElementById('cartTotal').innerHTML = `<h3 style="text-align:right;margin-top:15px">Total: $${total.toFixed(2)}</h3>`;
-  document.getElementById('checkoutBtn').style.display = 'block';
+function createPeerConnection(socketId,userName){
+  const pc=new RTCPeerConnection(peerConfig);
+  pc.onicecandidate=e=>{if(e.candidate)socket.emit('ice-candidate',{to:socketId,candidate:e.candidate});};
+  pc.ontrack=e=>addVideoTile(socketId,userName,e.streams[0]);
+  peers[socketId]={pc,userName};
+  return pc;
 }
 
-async function removeFromCart(productId) {
-  await fetch(API + '/cart/remove/' + productId, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token } });
-  await updateCartCount(); loadCart();
+function addVideoTile(id,name,stream){
+  let tile=document.getElementById('tile-'+id);
+  if(!tile){
+    tile=document.createElement('div');
+    tile.className='video-tile';
+    tile.id='tile-'+id;
+    document.getElementById('videoGrid').appendChild(tile);
+  }
+  tile.innerHTML=`<video autoplay playsinline ${id==='local'?'muted':''}></video><div class="name-tag">${name}</div>`;
+  tile.querySelector('video').srcObject=stream;
+}
+function removeVideoTile(id){const t=document.getElementById('tile-'+id);if(t)t.remove();}
+
+function toggleMic(){
+  const track=localStream.getAudioTracks()[0];
+  if(track){track.enabled=!track.enabled;document.getElementById('micBtn').classList.toggle('muted',!track.enabled);}
+}
+function toggleCam(){
+  const track=localStream.getVideoTracks()[0];
+  if(track){track.enabled=!track.enabled;document.getElementById('camBtn').classList.toggle('muted',!track.enabled);}
 }
 
-async function updateCartCount() {
-  if (!token) return;
-  const res = await fetch(API + '/cart', { headers: { 'Authorization': 'Bearer ' + token } });
-  const c = await res.json();
-  document.getElementById('cartCount').textContent = c.length;
+async function toggleScreenShare(){
+  try{
+    const screenStream=await navigator.mediaDevices.getDisplayMedia({video:true});
+    const screenTrack=screenStream.getVideoTracks()[0];
+    Object.values(peers).forEach(({pc})=>{
+      const sender=pc.getSenders().find(s=>s.track && s.track.kind==='video');
+      if(sender)sender.replaceTrack(screenTrack);
+    });
+    socket.emit('screen-share-started',{roomId});
+    document.getElementById('screenBtn').classList.add('active');
+    screenTrack.onended=()=>{
+      const camTrack=localStream.getVideoTracks()[0];
+      Object.values(peers).forEach(({pc})=>{
+        const sender=pc.getSenders().find(s=>s.track && s.track.kind==='video');
+        if(sender&&camTrack)sender.replaceTrack(camTrack);
+      });
+      socket.emit('screen-share-stopped',{roomId});
+      document.getElementById('screenBtn').classList.remove('active');
+    };
+  }catch(e){console.log('Screen share cancelled');}
 }
 
-function showCheckout() { showPage('checkout'); }
-
-async function placeOrder() {
-  const address = {
-    street: document.getElementById('street').value,
-    city: document.getElementById('city').value,
-    zip: document.getElementById('zip').value,
-    country: document.getElementById('country').value
+function toggleWhiteboard(){
+  const wb=document.getElementById('whiteboardContainer');
+  const showing=wb.style.display!=='none';
+  wb.style.display=showing?'none':'block';
+  document.getElementById('wbBtn').classList.toggle('active',!showing);
+  if(!showing)setupWhiteboard();
+}
+function setupWhiteboard(){
+  const canvas=document.getElementById('whiteboard');
+  canvas.width=canvas.offsetWidth;canvas.height=canvas.offsetHeight;
+  const ctx=canvas.getContext('2d');
+  let drawing=false,last={x:0,y:0};
+  canvas.onmousedown=e=>{drawing=true;last={x:e.offsetX,y:e.offsetY};};
+  canvas.onmousemove=e=>{
+    if(!drawing)return;
+    const data={x1:last.x,y1:last.y,x2:e.offsetX,y2:e.offsetY};
+    drawOnBoard(data,true);
+    last={x:e.offsetX,y:e.offsetY};
   };
-  const items = cart.map(i => ({ product: i.product._id, quantity: i.quantity, price: i.product.price }));
-  const res = await fetch(API + '/orders', {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-    body: JSON.stringify({ items, address })
+  canvas.onmouseup=()=>drawing=false;
+  canvas.onmouseleave=()=>drawing=false;
+}
+function drawOnBoard(data,emit){
+  const ctx=document.getElementById('whiteboard').getContext('2d');
+  ctx.strokeStyle='#1e293b';ctx.lineWidth=2;ctx.lineCap='round';
+  ctx.beginPath();ctx.moveTo(data.x1,data.y1);ctx.lineTo(data.x2,data.y2);ctx.stroke();
+  if(emit)socket.emit('draw',{roomId,data});
+}
+function clearBoard(){
+  const c=document.getElementById('whiteboard');
+  c.getContext('2d').clearRect(0,0,c.width,c.height);
+  socket.emit('clear-board',{roomId});
+}
+
+function togglePanel(){
+  const p=document.getElementById('sidePanel');
+  p.style.display=p.style.display==='none'?'flex':'none';
+}
+function switchPanel(name){
+  ['chat','files','people'].forEach(p=>{
+    document.getElementById('panel-'+p).style.display=p===name?'block':'none';
+    document.getElementById(p+'Tab').className=p===name?'active':'';
   });
-  if (res.ok) { alert('Order placed successfully!'); await updateCartCount(); showPage('orders'); }
-  else { const d = await res.json(); alert(d.message); }
+}
+function sendChat(){
+  const input=document.getElementById('chatInput');
+  const message=input.value.trim();
+  if(!message)return;
+  socket.emit('chat-message',{roomId,message,userName:user.name});
+  input.value='';
+}
+async function uploadFile(){
+  const file=document.getElementById('fileInput').files[0];
+  if(!file)return;
+  const fd=new FormData();fd.append('file',file);
+  const res=await fetch(API+'/messages/upload',{method:'POST',headers:{'Authorization':'Bearer '+token},body:fd});
+  const d=await res.json();
+  document.getElementById('filesList').innerHTML+=`<div class="file-item"><span>${d.name}</span><a href="${d.url}" target="_blank">Download</a></div>`;
 }
 
-async function loadOrders() {
-  if (!token) return;
-  const res = await fetch(API + '/orders/my', { headers: { 'Authorization': 'Bearer ' + token } });
-  const orders = await res.json();
-  document.getElementById('ordersList').innerHTML = orders.length ? orders.map(o => `
-    <div class="order-card">
-      <div style="display:flex;justify-content:space-between;margin-bottom:10px">
-        <strong>Order #${o._id.slice(-6).toUpperCase()}</strong>
-        <span class="status ${o.status}">${o.status.toUpperCase()}</span>
-      </div>
-      <div>${o.items.map(i => `${i.product?.name || 'Item'} x${i.quantity}`).join(', ')}</div>
-      <div style="margin-top:8px"><strong>Total: $${o.total.toFixed(2)}</strong> &nbsp; <small style="color:#888">${new Date(o.createdAt).toLocaleDateString()}</small></div>
-    </div>`).join('') : '<p>No orders yet.</p>';
+function leaveMeeting(){
+  if(localStream)localStream.getTracks().forEach(t=>t.stop());
+  Object.values(peers).forEach(({pc})=>pc.close());
+  peers={};
+  if(socket)socket.disconnect();
+  document.getElementById('videoGrid').innerHTML='';
+  document.getElementById('chatMessages').innerHTML='';
+  document.getElementById('page-meeting').classList.remove('active');
+  document.getElementById('page-lobby').classList.add('active');
 }
 
-updateAuthUI();
+if(token&&user)goLobby();
